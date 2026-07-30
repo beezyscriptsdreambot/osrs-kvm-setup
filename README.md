@@ -187,6 +187,12 @@ sudo ss -tlnp | grep 3389
 
 No output means xrdp is not listening — `sudo systemctl status xrdp` and `sudo systemctl restart xrdp`. If it only shows `127.0.0.1:3389`, remove the `address=` line from `/etc/xrdp/xrdp.ini` so it binds to all interfaces.
 
+If the service log shows a nonsense port such as `listening to port 338933893389`, the `port=` line in `/etc/xrdp/xrdp.ini` is mangled. Repair it and restart:
+
+```bash
+sudo sed -i '0,/^port=/s/^port=.*/port=3389/' /etc/xrdp/xrdp.ini && sudo systemctl restart xrdp
+```
+
 ```bash
 sudo ufw status verbose
 ```

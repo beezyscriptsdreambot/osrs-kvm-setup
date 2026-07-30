@@ -8,6 +8,8 @@ INSTALL_JAVA="${INSTALL_JAVA:-true}"
 INSTALL_CHROME="${INSTALL_CHROME:-true}"
 INSTALL_DREAMBOT="${INSTALL_DREAMBOT:-true}"
 DREAMBOT_URL="${DREAMBOT_URL:-https://dreambot.org/DBLauncher.jar}"
+DREAMBOT_FALLBACK_URL="${DREAMBOT_FALLBACK_URL:-https://downloads.dreambot.org/launcher/Launcher.jar}"
+DOWNLOAD_UA="${DOWNLOAD_UA:-Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36}"
 INSTALL_UFW="${INSTALL_UFW:-}"
 INSTALL_FAIL2BAN="${INSTALL_FAIL2BAN:-}"
 XFCE_EXTRAS="${XFCE_EXTRAS:-false}"
@@ -43,6 +45,7 @@ Environment variables:
   INSTALL_CHROME=true|false      Install Google Chrome
   INSTALL_DREAMBOT=true|false    Download the DreamBot launcher
   DREAMBOT_URL=<url>             Source of the launcher jar
+  DREAMBOT_FALLBACK_URL=<url>    Used when the primary URL fails
   INSTALL_UFW=true|false         Install and enable the ufw firewall
   INSTALL_FAIL2BAN=true|false    Install and configure fail2ban
   XFCE_EXTRAS=true|false         Also install xfce4-goodies
@@ -302,7 +305,7 @@ EOF
   chmod 0644 /etc/X11/Xwrapper.config
 
   if [ -f /etc/xrdp/xrdp.ini ]; then
-    sed -i "0,/^port=/s//port=${RDP_PORT}/" /etc/xrdp/xrdp.ini
+    sed -i "0,/^port=/s/^port=.*/port=${RDP_PORT}/" /etc/xrdp/xrdp.ini
   fi
 
   ok "xrdp configured (port ${RDP_PORT})"
@@ -385,7 +388,7 @@ EOF
 install_java() {
   log "Eclipse Temurin JDK 11"
   curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
-    | gpg --dearmor -o /etc/apt/keyrings/adoptium.gpg
+    | gpg --dearmor --batch --yes -o /etc/apt/keyrings/adoptium.gpg
   chmod 0644 /etc/apt/keyrings/adoptium.gpg
 
   local dist="$OS_CODENAME"
@@ -421,7 +424,7 @@ install_chrome() {
   fi
   log "Google Chrome"
   curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
-    | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg
+    | gpg --dearmor --batch --yes -o /etc/apt/keyrings/google-chrome.gpg
   chmod 0644 /etc/apt/keyrings/google-chrome.gpg
   printf 'deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main\n' \
     > /etc/apt/sources.list.d/google-chrome.list
@@ -440,6 +443,18 @@ temurin_java_bin() {
   fi
 }
 
+fetch_launcher() {
+  local out="$1" url
+  for url in "$DREAMBOT_URL" "$DREAMBOT_FALLBACK_URL"; do
+    [ -n "$url" ] || continue
+    if curl -fsSL --retry 3 --retry-delay 2 -A "$DOWNLOAD_UA" -o "$out" "$url"; then
+      return 0
+    fi
+    warn "Download from $url failed"
+  done
+  return 1
+}
+
 install_dreambot() {
   log "DreamBot launcher"
   local dir="$USER_HOME/DreamBot"
@@ -452,8 +467,9 @@ install_dreambot() {
   fi
 
   install -d -m 0755 "$dir"
-  if ! curl -fsSL -o "$jar" "$DREAMBOT_URL"; then
-    warn "Could not download the DreamBot launcher from $DREAMBOT_URL, skipping"
+  if ! fetch_launcher "$jar"; then
+    warn "Could not download the DreamBot launcher, skipping"
+    warn "Fetch it manually with: wget -O $jar $DREAMBOT_URL"
     return 0
   fi
   if [ ! -s "$jar" ] || [ "$(head -c 2 "$jar")" != "PK" ]; then
