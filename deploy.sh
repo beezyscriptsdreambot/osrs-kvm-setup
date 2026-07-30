@@ -306,6 +306,11 @@ EOF
 
   if [ -f /etc/xrdp/xrdp.ini ]; then
     sed -i "0,/^port=/s/^port=.*/port=${RDP_PORT}/" /etc/xrdp/xrdp.ini
+    local configured
+    configured="$(awk -F= '/^port=/{print $2; exit}' /etc/xrdp/xrdp.ini 2>/dev/null || true)"
+    if [ "$configured" != "$RDP_PORT" ]; then
+      die "xrdp.ini port is '${configured}' but should be '${RDP_PORT}', refusing to continue"
+    fi
   fi
 
   ok "xrdp configured (port ${RDP_PORT})"
@@ -613,12 +618,33 @@ enable_services() {
   systemctl enable xrdp >/dev/null 2>&1 || true
   systemctl enable xrdp-sesman >/dev/null 2>&1 || true
   systemctl restart xrdp-sesman >/dev/null 2>&1 || true
-  systemctl restart xrdp
+  if ! systemctl restart xrdp; then
+    warn "xrdp failed to restart"
+  fi
   if systemctl is-active --quiet xrdp; then
     ok "xrdp is running and starts automatically"
   else
     warn "xrdp is not running, check: systemctl status xrdp"
   fi
+  verify_listener
+}
+
+verify_listener() {
+  local i listening=""
+  for i in 1 2 3 4 5; do
+    if command -v ss >/dev/null 2>&1; then
+      listening="$(ss -H -tln 2>/dev/null | awk '{print $4}' | grep -E "[:.]${RDP_PORT}\$" || true)"
+    fi
+    [ -n "$listening" ] && break
+    sleep 1
+  done
+  if [ -n "$listening" ]; then
+    ok "port ${RDP_PORT} is accepting connections on $(printf '%s' "$listening" | paste -sd', ' -)"
+    return 0
+  fi
+  warn "Nothing is listening on port ${RDP_PORT}"
+  warn "Check the configured port: grep -m1 '^port=' /etc/xrdp/xrdp.ini"
+  warn "Check the service log:     journalctl -u xrdp -n 30 --no-pager"
 }
 
 summary() {
@@ -645,10 +671,16 @@ summary() {
   printf '    ufw           : %s\n' "$ufw_v"
   printf '    fail2ban      : %s\n' "$f2b_v"
   printf '    DreamBot      : %s\n' "$db_v"
+  if [ -f /var/run/reboot-required ]; then
+    printf '    Reboot        : required, the kernel or core libraries were updated\n'
+  fi
   printf '\n'
   printf '    Connect with: Windows "Remote Desktop Connection", macOS "Windows App", Linux "Remmina"\n'
   printf '    Session type in the login screen: Xorg\n'
-  printf '    Start DreamBot inside the session: dreambot (or the desktop icon)\n\n'
+  if [ "$db_v" != "not installed" ]; then
+    printf '    Start DreamBot inside the session: dreambot (or the desktop icon)\n'
+  fi
+  printf '\n'
 }
 
 main() {
