@@ -75,6 +75,8 @@ sudo RDP_USER=osrs RDP_PASSWORD='YourStrongPassword' INSTALL_UFW=true INSTALL_FA
 | `INSTALL_FAIL2BAN` | asked | Install fail2ban and configure it for sshd + xrdp. |
 | `INSTALL_JAVA` | `true` | Install Temurin JDK 11. |
 | `INSTALL_CHROME` | `true` | Install Google Chrome. |
+| `INSTALL_DREAMBOT` | `true` | Download the DreamBot launcher to `~/DreamBot/DBLauncher.jar`. |
+| `DREAMBOT_URL` | `https://dreambot.org/DBLauncher.jar` | Source of the launcher jar. |
 | `XFCE_EXTRAS` | `false` | Also install `xfce4-goodies` (more panel plugins and tools). |
 | `DISABLE_DISPLAY_MANAGER` | `true` | Disables LightDM/GDM and switches to `multi-user.target`. Saves RAM, since nobody uses the local console on a headless KVM. |
 
@@ -135,12 +137,29 @@ sudo fail2ban-client status sshd
 10. Disables the screensaver, lock screen and DPMS — otherwise the RDP session appears frozen after a few minutes
 11. Eclipse Temurin JDK 11 from the official Adoptium repository, including `JAVA_HOME` in `/etc/profile.d/temurin11.sh` and `update-alternatives`
 12. Google Chrome from the official Google repository (Chromium on arm64, since Google does not ship Chrome for it)
-13. ufw and fail2ban, if requested
-14. Disables the display manager
-15. Enables `xrdp` and `xrdp-sesman` via systemd → autostart after every reboot
-16. Prints a summary with IP, port, user and versions
+13. DreamBot launcher, downloaded to `~/DreamBot/DBLauncher.jar`, plus a `dreambot` command and a desktop entry
+14. ufw and fail2ban, if requested
+15. Disables the display manager
+16. Enables `xrdp` and `xrdp-sesman` via systemd → autostart after every reboot
+17. Prints a summary with IP, port, user and versions
 
 The script is idempotent: running it a second time does no harm. The original `startwm.sh` is kept as `/etc/xrdp/startwm.sh.orig`.
+
+## DreamBot
+
+The launcher is downloaded to `~/DreamBot/DBLauncher.jar`, which is also where DreamBot keeps its own data. Inside the RDP session you can start it from the desktop icon, from the applications menu, or from a terminal:
+
+```bash
+dreambot
+```
+
+That wrapper lives in `/usr/local/bin/dreambot` and pins the Temurin 11 binary explicitly, so the client keeps working even if another JDK becomes the system default later. The equivalent manual call is:
+
+```bash
+java -jar ~/DreamBot/DBLauncher.jar
+```
+
+DreamBot requires Java 11, which is why Temurin 11 is part of this setup. Running with `INSTALL_JAVA=false` leaves the launcher unusable.
 
 ## After the installation
 
@@ -153,6 +172,28 @@ systemctl status xrdp
 `JAVA_HOME` is available after a fresh login, or immediately via `source /etc/profile.d/temurin11.sh`.
 
 ## Troubleshooting
+
+"Unable to connect", error code `0x204` — the client never reached port 3389, this happens before any authentication. Work through it from the outside in. First check from your own machine whether the port is reachable at all:
+
+```bash
+nc -z -w 5 YOUR.VM.IP 3389
+```
+
+If that fails while SSH still works, check on the VM in this order:
+
+```bash
+sudo ss -tlnp | grep 3389
+```
+
+No output means xrdp is not listening — `sudo systemctl status xrdp` and `sudo systemctl restart xrdp`. If it only shows `127.0.0.1:3389`, remove the `address=` line from `/etc/xrdp/xrdp.ini` so it binds to all interfaces.
+
+```bash
+sudo ufw status verbose
+```
+
+`3389/tcp ALLOW` has to be listed. If not: `sudo ufw allow 3389/tcp`.
+
+If the port is listening and ufw allows it but the connection still times out, the block is upstream at your hosting provider — open 3389/tcp in their firewall or security group panel.
 
 Grey or black screen after login — usually an old session is still around. End all sessions of the user and reconnect:
 
