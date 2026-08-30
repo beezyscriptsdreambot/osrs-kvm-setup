@@ -1,6 +1,6 @@
 # osrs-kvm-setup
 
-One-shot setup for a Linux KVM: XFCE desktop, xrdp with autostart, Eclipse Temurin JDK 11, Google Chrome and the DreamBot launcher. Run it once, then connect over Remote Desktop and start your client.
+One-shot setup for a Linux KVM: XFCE desktop, xrdp with autostart, Eclipse Temurin JDK 11, Google Chrome and automatic security updates. Run it once, then connect over Remote Desktop.
 
 Target system is **Ubuntu Server 24.04 LTS** (amd64). Ubuntu 22.04 and Debian 12/13 work too — the distro is detected automatically. Install Ubuntu **Server**, not Desktop: GNOME and Wayland break xrdp.
 
@@ -36,8 +36,6 @@ Use the IP and user printed in the summary. Port 3389, session type `Xorg`.
 | macOS | Windows App (formerly Microsoft Remote Desktop) |
 | Linux | Remmina, or `xfreerdp /v:IP /u:USER` |
 
-Start DreamBot inside the session with `dreambot` or the desktop icon. The launcher lives in `~/DreamBot/DBLauncher.jar` and is pinned to Temurin 11.
-
 ## Options
 
 Presetting a variable skips the matching question.
@@ -51,8 +49,7 @@ Presetting a variable skips the matching question.
 | `INSTALL_FAIL2BAN` | asked | Install fail2ban for sshd + xrdp |
 | `INSTALL_JAVA` | `true` | Temurin JDK 11 |
 | `INSTALL_CHROME` | `true` | Google Chrome (Chromium on arm64) |
-| `INSTALL_DREAMBOT` | `true` | DreamBot launcher |
-| `DREAMBOT_URL` | dreambot.org | Source of the launcher jar |
+| `AUTO_SECURITY_UPDATES` | `true` | unattended-upgrades for security updates |
 | `XFCE_EXTRAS` | `false` | Also install `xfce4-goodies` |
 | `DISABLE_DISPLAY_MANAGER` | `true` | Disable LightDM/GDM, boot to `multi-user.target` |
 
@@ -65,6 +62,13 @@ sudo RDP_USER=osrs RDP_PASSWORD='YourStrongPassword' INSTALL_UFW=true INSTALL_FA
 ## Security
 
 ufw allows only SSH (port read from `sshd_config`) and RDP. fail2ban bans an IP for an hour after 5 failed attempts in 10 minutes, watching both `sshd` and `/var/log/xrdp-sesman.log`.
+
+Security updates install themselves. `unattended-upgrades` runs daily over the `-security` origins, cleans up unused kernels and dependencies and never reboots on its own — a pending reboot shows up in `/var/run/reboot-required`. Check it with:
+
+```bash
+systemctl status unattended-upgrades; sudo unattended-upgrade --dry-run --debug
+tail -n 50 /var/log/unattended-upgrades/unattended-upgrades.log
+```
 
 Port 3389 on a public IP means every bot on the internet sees your login prompt. An SSH tunnel avoids that — keep 3389 firewalled and connect to `localhost:3389`:
 
@@ -95,12 +99,6 @@ sudo pkill -u USER -f xfce4-session
 ```
 
 **Session dies immediately** — `sudo journalctl -u xrdp -u xrdp-sesman -n 100 --no-pager`, plus `/var/log/xrdp-sesman.log` and `~/.xorgxrdp.10.log`.
-
-**DreamBot download failed** — Cloudflare blocked the VM. Fetch it manually:
-
-```bash
-wget -O ~/DreamBot/DBLauncher.jar https://downloads.dreambot.org/launcher/Launcher.jar
-```
 
 **Locked yourself out** — use the provider's console: `sudo fail2ban-client set sshd unbanip YOUR.IP`
 

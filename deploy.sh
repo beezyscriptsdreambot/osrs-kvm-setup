@@ -6,10 +6,7 @@ RDP_PASSWORD="${RDP_PASSWORD:-}"
 RDP_PORT="${RDP_PORT:-3389}"
 INSTALL_JAVA="${INSTALL_JAVA:-true}"
 INSTALL_CHROME="${INSTALL_CHROME:-true}"
-INSTALL_DREAMBOT="${INSTALL_DREAMBOT:-true}"
-DREAMBOT_URL="${DREAMBOT_URL:-https://dreambot.org/DBLauncher.jar}"
-DREAMBOT_FALLBACK_URL="${DREAMBOT_FALLBACK_URL:-https://downloads.dreambot.org/launcher/Launcher.jar}"
-DOWNLOAD_UA="${DOWNLOAD_UA:-Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36}"
+AUTO_SECURITY_UPDATES="${AUTO_SECURITY_UPDATES:-true}"
 INSTALL_UFW="${INSTALL_UFW:-}"
 INSTALL_FAIL2BAN="${INSTALL_FAIL2BAN:-}"
 XFCE_EXTRAS="${XFCE_EXTRAS:-false}"
@@ -43,9 +40,8 @@ Environment variables:
   RDP_PORT=3389                  Listening port for xrdp
   INSTALL_JAVA=true|false        Install Temurin JDK 11
   INSTALL_CHROME=true|false      Install Google Chrome
-  INSTALL_DREAMBOT=true|false    Download the DreamBot launcher
-  DREAMBOT_URL=<url>             Source of the launcher jar
-  DREAMBOT_FALLBACK_URL=<url>    Used when the primary URL fails
+  AUTO_SECURITY_UPDATES=true|false
+                                 Install unattended-upgrades for security updates
   INSTALL_UFW=true|false         Install and enable the ufw firewall
   INSTALL_FAIL2BAN=true|false    Install and configure fail2ban
   XFCE_EXTRAS=true|false         Also install xfce4-goodies
@@ -438,77 +434,42 @@ install_chrome() {
   ok "Google Chrome installed"
 }
 
-temurin_java_bin() {
-  local jh
-  jh="$(find /usr/lib/jvm -maxdepth 1 -type d -name 'temurin-11-jdk*' 2>/dev/null | sort | head -n1)"
-  if [ -n "$jh" ] && [ -x "$jh/bin/java" ]; then
-    printf '%s' "$jh/bin/java"
-  else
-    printf 'java'
-  fi
-}
+configure_auto_updates() {
+  log "Automatic security updates"
+  apt-get install "${APT_OPTS[@]}" unattended-upgrades
 
-fetch_launcher() {
-  local out="$1" url
-  for url in "$DREAMBOT_URL" "$DREAMBOT_FALLBACK_URL"; do
-    [ -n "$url" ] || continue
-    if curl -fsSL --retry 3 --retry-delay 2 -A "$DOWNLOAD_UA" -o "$out" "$url"; then
-      return 0
-    fi
-    warn "Download from $url failed"
-  done
-  return 1
-}
-
-install_dreambot() {
-  log "DreamBot launcher"
-  local dir="$USER_HOME/DreamBot"
-  local jar="$dir/DBLauncher.jar"
-  local java_bin
-  java_bin="$(temurin_java_bin)"
-
-  if [ "$java_bin" = "java" ] && ! command -v java >/dev/null 2>&1; then
-    warn "No Java runtime found. DreamBot needs Java 11, run again with INSTALL_JAVA=true"
-  fi
-
-  install -d -m 0755 "$dir"
-  if ! fetch_launcher "$jar"; then
-    warn "Could not download the DreamBot launcher, skipping"
-    warn "Fetch it manually with: wget -O $jar $DREAMBOT_URL"
-    return 0
-  fi
-  if [ ! -s "$jar" ] || [ "$(head -c 2 "$jar")" != "PK" ]; then
-    warn "Downloaded file is not a valid jar, skipping"
-    rm -f "$jar"
-    return 0
-  fi
-  chmod 0644 "$jar"
-  chown -R "$RDP_USER":"$USER_GROUP" "$dir"
-
-  printf '#!/bin/sh\nexec %s -jar %s "$@"\n' "$java_bin" "$jar" > /usr/local/bin/dreambot
-  chmod 0755 /usr/local/bin/dreambot
-
-  install -d -m 0755 /usr/share/applications
-  cat > /usr/share/applications/dreambot.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Version=1.0
-Name=DreamBot
-GenericName=Old School RuneScape client
-Comment=DreamBot launcher
-Exec=/usr/local/bin/dreambot
-Icon=application-x-java-archive
-Terminal=false
-Categories=Game;
+  cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
 EOF
-  chmod 0644 /usr/share/applications/dreambot.desktop
+  chmod 0644 /etc/apt/apt.conf.d/20auto-upgrades
 
-  install -d -m 0755 "$USER_HOME/Desktop"
-  cp /usr/share/applications/dreambot.desktop "$USER_HOME/Desktop/dreambot.desktop"
-  chmod 0755 "$USER_HOME/Desktop/dreambot.desktop"
-  chown -R "$RDP_USER":"$USER_GROUP" "$USER_HOME/Desktop"
+  cat > /etc/apt/apt.conf.d/52unattended-upgrades-local <<'EOF'
+Unattended-Upgrade::Allowed-Origins {
+        "${distro_id}:${distro_codename}-security";
+        "${distro_id}ESMApps:${distro_codename}-apps-security";
+        "${distro_id}ESM:${distro_codename}-infra-security";
+        "Debian:${distro_codename}-security";
+};
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+  chmod 0644 /etc/apt/apt.conf.d/52unattended-upgrades-local
 
-  ok "DreamBot launcher saved to $jar"
+  systemctl enable --now apt-daily.timer >/dev/null 2>&1 || true
+  systemctl enable --now apt-daily-upgrade.timer >/dev/null 2>&1 || true
+  systemctl enable --now unattended-upgrades >/dev/null 2>&1 || true
+
+  if unattended-upgrade --dry-run --debug >/dev/null 2>&1; then
+    ok "Security updates are installed automatically (daily)"
+  else
+    warn "unattended-upgrades is installed but the dry run failed, check: unattended-upgrade --dry-run --debug"
+  fi
 }
 
 detect_ssh_port() {
@@ -648,16 +609,16 @@ verify_listener() {
 }
 
 summary() {
-  local ips java_v chrome_v ufw_v f2b_v db_v
+  local ips java_v chrome_v ufw_v f2b_v auto_v
   ips="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | paste -sd', ' - || true)"
   java_v="$(java -version 2>&1 | head -n1 || true)"
   chrome_v="$(google-chrome-stable --version 2>/dev/null || chromium --version 2>/dev/null || echo 'not installed')"
   ufw_v="$(ufw status 2>/dev/null | head -n1 || echo 'not installed')"
   f2b_v="$(systemctl is-active fail2ban 2>/dev/null || echo 'not installed')"
-  if [ -f "$USER_HOME/DreamBot/DBLauncher.jar" ]; then
-    db_v="$USER_HOME/DreamBot/DBLauncher.jar"
+  if command -v unattended-upgrade >/dev/null 2>&1; then
+    auto_v="enabled (daily)"
   else
-    db_v="not installed"
+    auto_v="not installed"
   fi
 
   printf '\n'
@@ -670,16 +631,13 @@ summary() {
   printf '    Browser       : %s\n' "$chrome_v"
   printf '    ufw           : %s\n' "$ufw_v"
   printf '    fail2ban      : %s\n' "$f2b_v"
-  printf '    DreamBot      : %s\n' "$db_v"
+  printf '    Auto updates  : %s\n' "$auto_v"
   if [ -f /var/run/reboot-required ]; then
     printf '    Reboot        : required, the kernel or core libraries were updated\n'
   fi
   printf '\n'
   printf '    Connect with: Windows "Remote Desktop Connection", macOS "Windows App", Linux "Remmina"\n'
   printf '    Session type in the login screen: Xorg\n'
-  if [ "$db_v" != "not installed" ]; then
-    printf '    Start DreamBot inside the session: dreambot (or the desktop icon)\n'
-  fi
   printf '\n'
 }
 
@@ -698,7 +656,7 @@ main() {
   configure_session_defaults
   if is_true "$INSTALL_JAVA"; then install_java; fi
   if is_true "$INSTALL_CHROME"; then install_chrome; fi
-  if is_true "$INSTALL_DREAMBOT"; then install_dreambot; fi
+  if is_true "$AUTO_SECURITY_UPDATES"; then configure_auto_updates; fi
   install_security
   configure_firewall
   disable_display_manager
