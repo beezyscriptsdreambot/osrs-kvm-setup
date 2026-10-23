@@ -1,6 +1,6 @@
 # osrs-kvm-setup
 
-One-shot setup for a Linux KVM: XFCE desktop, xrdp with autostart, Eclipse Temurin JDK 11, Google Chrome and automatic security updates. Run it once, then connect over Remote Desktop.
+One-shot setup for a Linux KVM: XFCE desktop, xrdp with autostart, Eclipse Temurin JDK 17, Google Chrome and automatic security updates. Run it once, then connect over Remote Desktop.
 
 Target system is **Ubuntu Server 24.04 LTS** (amd64). Ubuntu 22.04 and Debian 12/13 work too — the distro is detected automatically. Install Ubuntu **Server**, not Desktop: GNOME and Wayland break xrdp.
 
@@ -47,7 +47,7 @@ Presetting a variable skips the matching question.
 | `RDP_PORT` | `3389` | Listening port of xrdp |
 | `INSTALL_UFW` | asked | Install and enable ufw |
 | `INSTALL_FAIL2BAN` | asked | Install fail2ban for sshd + xrdp |
-| `INSTALL_JAVA` | `true` | Temurin JDK 11 |
+| `INSTALL_JAVA` | `true` | Temurin JDK 17 |
 | `INSTALL_CHROME` | `true` | Google Chrome (Chromium on arm64) |
 | `AUTO_SECURITY_UPDATES` | `true` | unattended-upgrades for security updates |
 | `XFCE_EXTRAS` | `false` | Also install `xfce4-goodies` |

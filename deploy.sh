@@ -25,7 +25,7 @@ die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'USAGE'
-deploy.sh - XFCE + xrdp + Temurin JDK 11 + Google Chrome
+deploy.sh - XFCE + xrdp + Temurin JDK 17 + Google Chrome
 
 Usage:
   sudo ./deploy.sh
@@ -38,7 +38,7 @@ Environment variables:
   RDP_USER=<name>                User for the RDP session
   RDP_PASSWORD=<password>        Set the password non-interactively
   RDP_PORT=3389                  Listening port for xrdp
-  INSTALL_JAVA=true|false        Install Temurin JDK 11
+  INSTALL_JAVA=true|false        Install Temurin JDK 17
   INSTALL_CHROME=true|false      Install Google Chrome
   AUTO_SECURITY_UPDATES=true|false
                                  Install unattended-upgrades for security updates
@@ -387,7 +387,7 @@ EOF
 }
 
 install_java() {
-  log "Eclipse Temurin JDK 11"
+  log "Eclipse Temurin JDK 17"
   curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public \
     | gpg --dearmor --batch --yes -o /etc/apt/keyrings/adoptium.gpg
   chmod 0644 /etc/apt/keyrings/adoptium.gpg
@@ -404,17 +404,18 @@ install_java() {
   printf 'deb [arch=%s signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %s main\n' \
     "$ARCH" "$dist" > /etc/apt/sources.list.d/adoptium.list
   apt-get update
-  apt-get install "${APT_OPTS[@]}" temurin-11-jdk
+  apt-get install "${APT_OPTS[@]}" temurin-17-jdk
 
   local java_home
-  java_home="$(find /usr/lib/jvm -maxdepth 1 -type d -name 'temurin-11-jdk*' 2>/dev/null | sort | head -n1)"
+  java_home="$(find /usr/lib/jvm -maxdepth 1 -type d -name 'temurin-17-jdk*' 2>/dev/null | sort | head -n1)"
   if [ -n "$java_home" ]; then
-    printf 'export JAVA_HOME=%s\nexport PATH="$JAVA_HOME/bin:$PATH"\n' "$java_home" > /etc/profile.d/temurin11.sh
-    chmod 0644 /etc/profile.d/temurin11.sh
+    rm -f /etc/profile.d/temurin11.sh
+    printf 'export JAVA_HOME=%s\nexport PATH="$JAVA_HOME/bin:$PATH"\n' "$java_home" > /etc/profile.d/temurin17.sh
+    chmod 0644 /etc/profile.d/temurin17.sh
     update-alternatives --set java "$java_home/bin/java" >/dev/null 2>&1 || true
     update-alternatives --set javac "$java_home/bin/javac" >/dev/null 2>&1 || true
   fi
-  ok "Java 11 installed"
+  ok "Java 17 installed"
 }
 
 install_chrome() {
